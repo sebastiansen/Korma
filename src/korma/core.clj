@@ -536,8 +536,8 @@
                       {:fk (raw (eng/prefix foreign-ent (:fk opts)))})]
     (merge {:table (:table sub-ent)
             :alias (:alias sub-ent)
-            :ent-name (:name sub-ent)
-            :rel-type type}
+            :rel-type type
+            :ent-var (-> sub-ent :name symbol resolve)}
            db-keys
            fk-override)))
 
@@ -569,7 +569,10 @@
   is on the sub-entity with the format table_id: user.id = address.user_id
   Can optionally pass a map with a :fk key to explicitly set the foreign key.
 
-  (has-one users address {:fk :addressID})"
+  (has-one users address {:fk :addressID})
+
+  Sub entity can also be a vector with the name of the relationship and the entity
+  (has-one users [:book books] {:fk :addressID})"
   [ent sub-ent & [opts]]
   `(rel ~ent ~(prepare-sub-ent sub-ent) :has-one ~opts))
 
@@ -578,7 +581,10 @@
   is on the current entity with the format sub-ent-table_id: email.user_id = user.id.
   Can optionally pass a map with a :fk key to explicitly set the foreign key.
 
-  (belongs-to users email {:fk :emailID})"
+  (belongs-to users email {:fk :emailID})
+
+  Sub entity can also be a vector with the name of the relationship and the entity
+  (belongs-to users [:book books] {:fk :addressID})"
   [ent sub-ent & [opts]]
   `(rel ~ent ~(prepare-sub-ent sub-ent) :belongs-to ~opts))
 
@@ -587,16 +593,19 @@
   is on the sub-entity with the format table_id: user.id = email.user_id
   Can optionally pass a map with a :fk key to explicitly set the foreign key.
 
-  (has-many users email {:fk :emailID})"
+  (has-many users email {:fk :emailID})
+
+  Sub entity can also be a vector with the name of the relationship and the entity
+  (has-many users [:emails email] {:fk :emailID})"
   [ent sub-ent & [opts]]
   `(rel ~ent ~(prepare-sub-ent sub-ent) :has-many ~opts))
 
-(defn many-to-many-fn [ent sub-ent-var join-table opts]
+(defn many-to-many-fn [ent sub-ent join-table opts]
   (let [opts (assoc opts
                :join-table join-table
                :lfk (delay (get opts :lfk (default-fk-name ent)))
-               :rfk (delay (get opts :rfk (default-fk-name sub-ent-var))))]
-    (rel ent sub-ent-var :many-to-many opts)))
+               :rfk (delay (get opts :rfk (default-fk-name (second sub-ent)))))]
+    (rel ent sub-ent :many-to-many opts)))
 
 (defmacro many-to-many
   "Add a many-to-many relation for the given entity.  It is assumed that a join
