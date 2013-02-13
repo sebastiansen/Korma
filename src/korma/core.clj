@@ -530,14 +530,14 @@
     (:has-one :has-many) [(get-db-keys ent sub-ent) sub-ent]
     :belongs-to          [(get-db-keys sub-ent ent) ent]))
 
-(defn create-relation [ent sub-ent type opts]
+(defn create-relation [ent sub-ent resolved type opts]
   (let [[db-keys foreign-ent] (db-keys-and-foreign-ent type ent sub-ent opts)
         fk-override (when (:fk opts)
                       {:fk (raw (eng/prefix foreign-ent (:fk opts)))})]
     (merge {:table (:table sub-ent)
             :alias (:alias sub-ent)
             :rel-type type
-            :ent-var (-> sub-ent :name symbol resolve)}
+            :ent-var resolved}
            db-keys
            fk-override)))
 
@@ -550,7 +550,7 @@
                      sub-ent (when resolved (deref sub-ent))]
                  (when-not (map? sub-ent)
                    (throw (Exception. (format "Entity used in relationship does not exist: %s" (name var-name)))))
-                 (create-relation ent sub-ent type opts))))))
+                 (create-relation ent sub-ent resolved type opts))))))
 
 (defn get-rel [ent sub-ent]
   (let [sub-name (if (map? sub-ent)
@@ -571,7 +571,7 @@
 
   (has-one users address {:fk :addressID})
 
-  Sub entity can also be a vector with the name of the relationship and the entity
+  Sub-entity can also be a vector with the name of the relationship and the entity
   (has-one users [:book books] {:fk :addressID})"
   [ent sub-ent & [opts]]
   `(rel ~ent ~(prepare-sub-ent sub-ent) :has-one ~opts))
@@ -583,7 +583,7 @@
 
   (belongs-to users email {:fk :emailID})
 
-  Sub entity can also be a vector with the name of the relationship and the entity
+  Sub-entity can also be a vector with the name of the relationship and the entity
   (belongs-to users [:book books] {:fk :addressID})"
   [ent sub-ent & [opts]]
   `(rel ~ent ~(prepare-sub-ent sub-ent) :belongs-to ~opts))
@@ -595,7 +595,7 @@
 
   (has-many users email {:fk :emailID})
 
-  Sub entity can also be a vector with the name of the relationship and the entity
+  Sub-entity can also be a vector with the name of the relationship and the entity
   (has-many users [:emails email] {:fk :emailID})"
   [ent sub-ent & [opts]]
   `(rel ~ent ~(prepare-sub-ent sub-ent) :has-many ~opts))
@@ -716,8 +716,9 @@
                                                (body-fn)
                                                (where {@lfk (get % pk)})))))))
 
-(defn with* [query sub-ent body-fn]
-  (let [rel (get-rel (:ent query) sub-ent)]
+(defn with* [query rel-ent body-fn]
+  (let [rel (get-rel (:ent query) rel-ent)
+        sub-ent (-> rel :ent-var deref)]
     (case (:rel-type rel)
       (:has-one :belongs-to) (with-now rel query sub-ent body-fn)
       :has-many              (with-later rel query sub-ent body-fn)

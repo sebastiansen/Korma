@@ -453,13 +453,13 @@
 (defentity book-with-schema (table :korma.myschema.book))
 (defentity author-with-schema (table :korma.otherschema.author) (belongs-to book-with-schema))
 
-(deftest dbname-on-tablename 
+(deftest dbname-on-tablename
   (are [query result] (= query result)
        (sql-only
          (select author-with-db (with book-with-db)))
          "SELECT \"other\".\"author\".*, \"korma\".\"book\".* FROM \"other\".\"author\" LEFT JOIN \"korma\".\"book\" ON \"korma\".\"book\".\"id\" = \"other\".\"author\".\"book_id\""))
 
-(deftest schemaname-on-tablename 
+(deftest schemaname-on-tablename
   (are [query result] (= query result)
        (sql-only
          (select author-with-schema (with book-with-schema)))
@@ -613,4 +613,3 @@
                                                                 (where {:b 2
                                                                         :c 3})))
                                            (order :a)))))))
-
