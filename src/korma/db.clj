@@ -171,9 +171,11 @@
 (defmacro transaction
   "Execute all queries within the body in a single transaction."
   [& body]
-  `(jdbc/with-connection (get-connection @_default)
-     (jdbc/transaction
-       ~@body)))
+  `(if (jdbc/find-connection)
+     (jdbc/transaction ~@body)
+     (jdbc/with-connection (get-connection @_default)
+       (jdbc/transaction
+        ~@body))))
 
 (defn rollback
   "Tell this current transaction to rollback."
@@ -208,7 +210,7 @@
 
 (defn- ->naming-strategy [{:keys [keys fields]}]
   {:keyword keys
-   :identifier fields})
+   :entity fields})
 
 (defmacro with-db
   "Execute all queries within the body using the given db spec"
@@ -216,9 +218,10 @@
   `(jdbc/with-connection (get-connection ~db)
      ~@body))
 
-(defn do-query [{:keys [db options] :or {options @conf/options} :as query}]
-  (jdbc/with-naming-strategy (->naming-strategy (:naming options))
-    (if (jdbc/find-connection)
-      (exec-sql query)
-      (with-db (or db @_default)
-        (exec-sql query)))))
+(defn do-query [{:keys [db options] :as query}]
+  (let [options (or options @conf/options)]
+    (jdbc/with-naming-strategy (->naming-strategy (:naming options))
+      (if (jdbc/find-connection)
+        (exec-sql query)
+        (with-db (or db @_default)
+          (exec-sql query))))))
