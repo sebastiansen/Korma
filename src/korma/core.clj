@@ -592,7 +592,7 @@
   "Add a has-many relation for the given entity. It is assumed that the foreign key
   is on the sub-entity with the format table_id: user.id = email.user_id
   Can optionally pass a map with a :fk key to explicitly set the foreign key.
-  
+
   (has-many users email {:fk :emailID})"
   [ent sub-ent & [opts]]
   `(rel ~ent ~(prepare-sub-ent sub-ent) :has-many ~opts))
@@ -743,3 +743,101 @@
   `(with* ~query ~ent (fn [q#]
                         (-> q#
                             ~@body))))
+
+(declare save save-with-rels)
+
+(defn- get-key
+  [rel k]
+  (-> (if (delay? rel) rel (deref rel))
+      k
+      first
+      val
+      (clojure.string/split #"\"")
+      last
+      keyword))
+
+(defn- rel-values
+  [rel]
+  [(get-key rel :pk) (get-key rel :fk) (:ent rel)])
+
+(defn- get-rels
+  [{:keys [rel]} type]
+  (reduce
+   (fn [rels [k v]]
+     (if (= (:rel-type @(rel k)) type)
+       (assoc rels (keyword k) @v)
+       rels))
+   {}
+   rel))
+
+(defn- save-many-rels
+  [many-rels rels-map]
+  (doseq [[k rel] many-rels]
+    (let [[pk fk ent-var] (rel-values rel)
+          ent             (deref ent-var)]
+      (doseq [record (map (fn [val] (assoc val fk (pk rels-map)))
+                          (rels-map k))]
+        (save-with-rels ent record)))))
+
+(defn- save-m->m-rels
+  [rels record]
+  (doseq [[k rel] rels]
+    (let [rpk (get-key rel :rpk)
+          lpk (get-key rel :lpk)
+          rfk (get-key rel :rfk)
+          lfk (get-key rel :lfk)]
+      (doseq [record (rels k)]
+        (let [new-val (save-with-rels (:ent rel) record)]
+          (insert (:map-table rel)
+                  (values {rfk (rpk rels)
+                           lfk (lpk new-val)})))))))
+
+(defn- save-single-rels
+  [rels record]
+  (reduce
+   (fn [record* [rel-name {:keys [ent-var]}]]
+     (if-let [rel-value (record rel-name)]
+       (let [{:keys [pk fk]} (deref ent-var)
+             new-id          (pk (save-with-rels ent-var rel-value))]
+         (assoc record* fk new-id))
+       record*))
+   record
+   rels))
+
+(defn save-with-rels
+  "Inserts a single value with its relationships."
+  [{id :pk rel :rel :as ent} record]
+  (let [many-rels   (get-rels ent :has-many)
+        m->m-rels   (get-rels ent :has-many-to-many)
+        single-rels (get-rels ent :belongs-to)
+        query       (if (id record)
+                      #(update ent
+                               (set-fields %)
+                               (where {id (id %)}))
+                      #(insert ent (values %)))
+        rels-keys   (concat (keys many-rels)
+                            (keys single-rels)
+                            (keys m->m-rels))
+        new-record  (-> (apply dissoc
+                               (save-single-rels
+                                single-rels
+                                record)
+                               rels-keys)
+                        query)
+        new-id      (id new-record)
+        record*     (assoc record id new-id)]
+    (save-many-rels many-rels record*)
+    (save-m->m-rels m->m-rels record*)
+    new-record))
+
+(defn save!
+  "Inserts a single value including its relationships.
+   Returns the record from the insert or update, ."
+  [ent & records]
+  (korma.db/transaction
+   (try
+     (doseq [record records]
+       (save-with-rels ent record))
+     (catch Exception e
+       (korma.db/rollback)
+       false))))
