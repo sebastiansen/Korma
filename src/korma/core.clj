@@ -819,7 +819,7 @@
 
 (defn- rel-values
   [rel]
-  [(get-key rel :pk) (get-key rel :fk) (:ent rel)])
+  [(get-key rel :pk) (get-key rel :fk) (:ent-var rel)])
 
 (defn- get-rels
   [{:keys [rel]} type]
@@ -832,12 +832,13 @@
    rel))
 
 (defn- save-many-rels
-  [many-rels rels-map]
-  (doseq [[k rel] many-rels]
+  [rels record]
+  (doseq [[k rel] rels]
     (let [[pk fk ent-var] (rel-values rel)
           ent             (deref ent-var)]
-      (doseq [record (map (fn [val] (assoc val fk (pk rels-map)))
-                          (rels-map k))]
+      (doseq [record (map (fn [val]
+                            (assoc val fk (pk rels)))
+                          (record k))]
         (save-with-rels ent record)))))
 
 (defn- save-m->m-rels
@@ -856,10 +857,11 @@
 (defn- save-single-rels
   [rels record]
   (reduce
-   (fn [record* [rel-name {:keys [ent-var]}]]
+   (fn [record* [rel-name rel]]
      (if-let [rel-value (record rel-name)]
-       (let [{:keys [pk fk]} (deref ent-var)
-             new-id          (pk (save-with-rels ent-var rel-value))]
+       (let [[pk fk ent-var] (rel-values rel)
+             ent    (deref ent-var)
+             new-id (save-with-rels ent rel-value)]
          (assoc record* fk new-id))
        record*))
    record
@@ -885,15 +887,15 @@
                                 record)
                                rels-keys)
                         query)
-        new-id      (id new-record)
+        new-id      (or (id new-record) (:GENERATED_KEY new-record))
         record*     (assoc record id new-id)]
     (save-many-rels many-rels record*)
     (save-m->m-rels m->m-rels record*)
-    new-record))
+    new-id))
 
-(defn save!
+(defn save
   "Inserts a single value including its relationships.
-   Returns the record from the insert or update, ."
+   Returns the new id from the insert or update."
   [ent & records]
   (korma.db/transaction
    (try
