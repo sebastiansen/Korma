@@ -539,15 +539,16 @@
     (:has-one :has-many) [(get-db-keys ent sub-ent) sub-ent]
     :belongs-to          [(get-db-keys sub-ent ent) ent]))
 
-(defn create-relation [ent sub-ent resolved type opts]
+(defn create-relation [ent sub-ent rel-name resolved type opts]
   (let [[db-keys foreign-ent] (db-keys-and-foreign-ent type ent sub-ent opts)
         fk-override (when-let [fk-key (:fk opts)]
                       {:fk (raw (eng/prefix foreign-ent fk-key))
                        :fk-key fk-key})]
-    (merge {:table (:table sub-ent)
-            :alias (:alias sub-ent)
+    (merge {:table    (:table sub-ent)
+            :alias    (:alias sub-ent)
             :rel-type type
-            :ent-var resolved}
+            :rel-name rel-name
+            :ent-var  resolved}
            db-keys
            fk-override)))
 
@@ -560,7 +561,7 @@
                      sub-ent (when resolved (deref sub-ent))]
                  (when-not (map? sub-ent)
                    (throw (Exception. (format "Entity used in relationship does not exist: %s" (name var-name)))))
-                 (create-relation ent sub-ent resolved type opts))))))
+                 (create-relation ent sub-ent rel-name resolved type opts))))))
 
 (defn get-rel [ent sub-ent]
   (let [sub-name (if (map? sub-ent)
@@ -696,13 +697,13 @@
     (merge-query query neue)))
 
 (defn- with-later [rel query ent body-fn]
-  (let [fk (:fk rel)
-        fk-key (:fk-key rel)
-        pk (get-in query [:ent :pk])
-        table (keyword (eng/table-alias ent))]
+  (let [fk       (:fk rel)
+        fk-key   (:fk-key rel)
+        pk       (get-in query [:ent :pk])
+        rel-name (keyword (:rel-name rel))]
     (post-query query
                 (partial map
-                         #(assoc % table
+                         #(assoc % rel-name
                                  (select ent
                                          (body-fn)
                                          (where {fk-key (get % pk)})))))))
@@ -812,7 +813,7 @@
 
 (declare save save-with-rels)
 
-(defn- get-rels
+(defn get-rels
   [{:keys [rel]} type]
   (reduce
    (fn [rels [k v]]
@@ -893,7 +894,7 @@
      (save-with-rels ent record)
      (catch Exception e
        (korma.db/rollback)
-       false))))
+       (throw e)))))
 
 (defn batch-save
   [ent records]
@@ -903,4 +904,4 @@
        (save-with-rels ent record))
      (catch Exception e
        (korma.db/rollback)
-       false))))
+       (throw e)))))
