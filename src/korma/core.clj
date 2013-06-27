@@ -826,10 +826,10 @@
 (defn- save-many-rels
   [rels record]
   (doseq [[name rel] rels]
-    (let [{:keys [pk fk ent-var]} rel
+    (let [{:keys [pk-key fk-key ent-var]} rel
           ent                     (deref ent-var)]
       (doseq [record* (map (fn [val]
-                             (assoc val fk (pk record)))
+                             (assoc val fk-key (pk-key record)))
                            (record name))]
         (save-with-rels ent record*)))))
 
@@ -885,7 +885,7 @@
                       (assoc record id new-id))]
     (save-many-rels many-rels record*)
     (save-m->m-rels m->m-rels record*)
-    new-id))
+    record*))
 
 (defn save
   "Inserts a single value including its relationships.
