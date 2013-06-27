@@ -880,7 +880,9 @@
                                rels-keys)
                         query)
         new-id      (or (id new-record) (:GENERATED_KEY new-record))
-        record*     (assoc record id new-id)]
+        record*     (if (id record)
+                      (assoc record id new-id)
+                      record)]
     (save-many-rels many-rels record*)
     (save-m->m-rels m->m-rels record*)
     new-id))
