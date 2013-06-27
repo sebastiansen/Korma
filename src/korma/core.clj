@@ -881,8 +881,8 @@
                         query)
         new-id      (or (id new-record) (:GENERATED_KEY new-record))
         record*     (if (id record)
-                      (assoc record id new-id)
-                      record)]
+                      record
+                      (assoc record id new-id))]
     (save-many-rels many-rels record*)
     (save-m->m-rels m->m-rels record*)
     new-id))
