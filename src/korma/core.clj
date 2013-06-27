@@ -516,16 +516,21 @@
    :else      (throw (Exception. (str "Can't determine default fk for " ent)))))
 
 (defn- many-to-many-keys [parent child {:keys [join-table lfk rfk]}]
-  {:lpk (raw (eng/prefix parent (:pk parent)))
-   :lfk (delay (raw (eng/prefix {:table (name join-table)} @lfk)))
-   :rfk (delay (raw (eng/prefix {:table (name join-table)} @rfk)))
-   :rpk (raw (eng/prefix child (:pk child)))
+  {:lpk        (raw (eng/prefix parent (:pk parent)))
+   :lfk        (delay (raw (eng/prefix {:table (name join-table)} @lfk)))
+   :rfk        (delay (raw (eng/prefix {:table (name join-table)} @rfk)))
+   :rpk        (raw (eng/prefix child (:pk child)))
+   :lpk-key    (:pk parent)
+   :lfk-key    (delay @lfk)
+   :rfk-key    (delay @rfk)
+   :rpk-key    (:pk child)
    :join-table join-table})
 
 (defn- get-db-keys [parent child]
   (let [fk-key (default-fk-name parent)]
     {:pk (raw (eng/prefix parent (:pk parent)))
      :fk (raw (eng/prefix child fk-key))
+     :pk-key (:pk parent)
      :fk-key fk-key}))
 
 (defn- db-keys-and-foreign-ent [type ent sub-ent opts]
@@ -807,19 +812,9 @@
 
 (declare save save-with-rels)
 
-(defn- get-key
-  [rel k]
-  (-> (if (delay? rel) rel (deref rel))
-      k
-      first
-      val
-      (clojure.string/split #"\"")
-      last
-      keyword))
-
 (defn- rel-values
   [rel]
-  [(get-key rel :pk) (get-key rel :fk) (:ent-var rel)])
+  [(get-key (rel :pk-key)) (get-key (rel :fk-key)) (:ent-var rel)])
 
 (defn- get-rels
   [{:keys [rel]} type]
@@ -833,21 +828,21 @@
 
 (defn- save-many-rels
   [rels record]
-  (doseq [[k rel] rels]
+  (doseq [[name rel] rels]
     (let [[pk fk ent-var] (rel-values rel)
           ent             (deref ent-var)]
-      (doseq [record (map (fn [val]
-                            (assoc val fk (pk rels)))
-                          (record k))]
-        (save-with-rels ent record)))))
+      (doseq [record* (map (fn [val]
+                            (assoc val fk (pk record)))
+                          (record name))]
+        (save-with-rels ent record*)))))
 
 (defn- save-m->m-rels
   [rels record]
   (doseq [[k rel] rels]
-    (let [rpk (get-key rel :rpk)
-          lpk (get-key rel :lpk)
-          rfk (get-key rel :rfk)
-          lfk (get-key rel :lfk)]
+    (let [rpk (rel :rpk-key)
+          lpk (rel :lpk-key)
+          rfk (deref (rel :rfk-key))
+          lfk (deref (rel :lfk-key))]
       (doseq [record (rels k)]
         (let [new-val (save-with-rels (:ent rel) record)]
           (insert (:map-table rel)
@@ -860,8 +855,8 @@
    (fn [record* [rel-name rel]]
      (if-let [rel-value (record rel-name)]
        (let [[pk fk ent-var] (rel-values rel)
-             ent    (deref ent-var)
-             new-id (save-with-rels ent rel-value)]
+             ent             (deref ent-var)
+             new-id          (save-with-rels ent rel-value)]
          (assoc record* fk new-id))
        record*))
    record
@@ -902,5 +897,6 @@
      (doseq [record records]
        (save-with-rels ent record))
      (catch Exception e
+       (.printStackTrace e)
        (korma.db/rollback)
        false))))
