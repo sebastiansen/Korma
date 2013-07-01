@@ -851,10 +851,10 @@
   (reduce
    (fn [record* [rel-name rel]]
      (if-let [rel-value (record rel-name)]
-       (let [{:keys [pk fk ent-var]} rel
-             ent             (deref ent-var)
-             new-id          (save-with-rels ent rel-value)]
-         (assoc record* fk new-id))
+       (let [{:keys [pk-key fk-key ent-var]} rel
+             ent                             (deref ent-var)
+             new-id                          (pk-key (save-with-rels ent rel-value))]
+         (assoc record* fk-key new-id))
        record*))
    record
    rels))
@@ -865,11 +865,21 @@
   (let [many-rels   (get-rels ent :has-many)
         m->m-rels   (get-rels ent :has-many-to-many)
         single-rels (get-rels ent :belongs-to)
-        query       (if (id record)
-                      #(update ent
-                               (set-fields %)
-                               (where {id (id %)}))
-                      #(insert ent (values %)))
+        new-record? (nil? (id record))
+        query       (if new-record?
+                      (fn [record]
+                        (if-let [generator (:pk-generator ent)]
+                          (let [new-id (generator)]
+                            (insert ent (values (assoc record id new-id)))
+                            {id new-id})
+                          (insert ent (values record))))
+                      (fn [record]
+                        (let [record* (dissoc record id)]
+                          (if (empty? record*)
+                            record
+                            (update ent
+                                    (set-fields record*)
+                                    (where {id (id record)}))))))
         rels-keys   (concat (keys many-rels)
                             (keys single-rels)
                             (keys m->m-rels))
@@ -879,10 +889,10 @@
                                 record)
                                rels-keys)
                         query)
-        new-id      (or (id new-record) (:GENERATED_KEY new-record))
-        record*     (if (id record)
-                      record
-                      (assoc record id new-id))]
+        record*     (if new-record?
+                      (assoc record id (or (id new-record)
+                                           (:GENERATED_KEY new-record)))
+                      record)]
     (save-many-rels many-rels record*)
     (save-m->m-rels m->m-rels record*)
     record*))
@@ -907,3 +917,7 @@
      (catch Exception e
        (korma.db/rollback)
        (throw e)))))
+
+(defn pk-generator
+  [ent f]
+  (assoc ent :pk-generator f))
