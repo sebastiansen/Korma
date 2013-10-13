@@ -648,3 +648,42 @@
                                                                         :c 3})))
                                            (order :a)))))))
 
+;; Named relationships
+
+(declare books)
+
+(defentity people)
+
+(defentity books_editions)
+
+(defentity books
+  (has-many [:editions books_editions])
+  (belongs-to [:author people])
+  (many-to-many [:similar books] :similar_books {:lfk :from_book
+                                                 :rfk :to_book}))
+
+(deftest test-join-names-relationships
+  (are [query result] (= query result)
+       (sql-only (select books
+                         (join :editions)))
+       "SELECT \"books\".* FROM \"books\" LEFT JOIN \"books_editions\" ON \"books\".\"id\" = \"books_editions\".\"books_id\""
+       (sql-only (select books
+                         (join :author)))
+       "SELECT \"books\".* FROM \"books\" LEFT JOIN \"people\" ON \"people\".\"id\" = \"books\".\"people_id\""
+       (sql-only (select books
+                         (join :similar)))
+       "SELECT \"books\".* FROM (\"books\" LEFT JOIN \"similar_books\" ON \"books\".\"id\" = \"similar_books\".\"from_book\") LEFT JOIN \"books\" ON \"similar_books\".\"to_book\" = \"books\".\"id\""))
+
+(deftest test-join-names-relationships
+  (are [query result] (= query result)
+       (with-out-str (dry-run (select books
+                                      (with :editions))))
+       (str "dry run :: SELECT \"books\".* FROM \"books\" :: []\n"
+            "dry run :: SELECT \"books_editions\".* FROM \"books_editions\" WHERE (\"books_editions\".\"books_id\" = ?) :: [1]\n")
+       (with-out-str (dry-run (select books
+                                      (with :author))))
+       "dry run :: SELECT \"books\".*, \"people\".* FROM \"books\" LEFT JOIN \"people\" ON \"people\".\"id\" = \"books\".\"people_id\" :: []\n"
+       (with-out-str (dry-run (select books
+                                      (with :similar))))
+       (str "dry run :: SELECT \"books\".* FROM \"books\" :: []\n"
+            "dry run :: SELECT \"books\".* FROM \"books\" INNER JOIN \"similar_books\" ON \"similar_books\".\"to_book\" = \"books\".\"id\" WHERE (\"similar_books\".\"from_book\" = ?) :: [1]\n")))
